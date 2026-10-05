@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mein Habit Tracker</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#FBF3F5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Habits" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+
+  <style>
+    /* ============================================================
+       DESIGN TOKENS
+       ============================================================ */
+    :root {
+      --bg: #FBF3F5;          /* zartes Rosé als Grundfläche */
+      --card: #FFFFFF;
+      --blush: #F6DCE3;       /* helle Flächen, Fortschrittsbalken-Hintergrund */
+      --rose: #D4607A;        /* Hauptakzent */
+      --rose-deep: #A8405A;   /* Hover / Betonung */
+      --rose-soft: #EFA9B9;   /* Diagramm-Zweitfarbe */
+      --ink: #3F2A31;         /* Textfarbe (warmes Dunkelbraun statt Schwarz) */
+      --ink-muted: #8C6F77;
+      --line: #F0DCE2;
+      --ok: #C9798F;
+      --warn: #E4B27C;        /* zarter Bernstein für "leicht daneben" */
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 6px 24px rgba(168, 64, 90, 0.08);
+      --font: "Avenir Next", "Avenir", -apple-system, "Helvetica Neue", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+    h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 20px; }
+    h3 { font-size: 16px; }
+    p { margin: 0; }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; border: none; background: none; }
+    input[type="number"], input[type="text"], input[type="date"], textarea, select {
+      width: 100%;
+      border: 1.5px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      padding: 12px 14px;
+      font-size: 18px;
+      min-height: 50px;
+    }
+    input:focus, textarea:focus, select:focus, button:focus-visible {
+      outline: 3px solid rgba(212, 96, 122, 0.35);
+      outline-offset: 1px;
+    }
+    textarea { resize: vertical; min-height: 90px; line-height: 1.45; }
+
+    /* ============================================================
+       LAYOUT
+       ============================================================ */
+    .app { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; }
+    .topbar {
+      display: flex; flex-wrap: wrap; gap: 14px;
+      align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .brand { display: flex; flex-direction: column; gap: 2px; }
+    .brand small { color: var(--ink-muted); font-size: 14px; }
+
+    .datenav { display: flex; align-items: center; gap: 8px; }
+    .datenav input[type="date"] { width: auto; min-width: 180px; font-size: 16px; }
+
+    .grid { display: grid; gap: 18px; grid-template-columns: repeat(12, 1fr); }
+    .col-12 { grid-column: span 12; }
+    .col-8 { grid-column: span 8; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    .col-3 { grid-column: span 3; }
+    @media (max-width: 760px) {
+      .col-8, .col-6, .col-4, .col-3 { grid-column: span 12; }
+      .col-3.half, .col-6.half { grid-column: span 6; }
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+    .card.soft { background: var(--blush); box-shadow: none; }
+    .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .card-head .meta { color: var(--ink-muted); font-size: 14px; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Tab-Leiste unten (daumenfreundlich auf dem iPad) */
+    .tabs {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: center; gap: 6px;
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(251, 243, 245, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-top: 1px solid var(--line);
+    }
+    .tab {
+      flex: 1; max-width: 220px; min-height: 56px;
+      border-radius: 18px; font-size: 16px; font-weight: 600;
+      color: var(--ink-muted); background: transparent;
+    }
+    .tab.active { background: #fff; color: var(--rose-deep); box-shadow: var(--shadow); }
+
+    /* ============================================================
+       BAUSTEINE
+       ============================================================ */
+    .btn {
+      min-height: 50px; padding: 0 20px;
+      border-radius: 14px; font-weight: 600; font-size: 16px;
+      background: var(--blush); color: var(--rose-deep);
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn.primary { background: var(--rose); color: #fff; }
+    .btn.ghost { background: transparent; border: 1.5px solid var(--line); }
+    .btn.icon { width: 50px; padding: 0; font-size: 22px; }
+    .btn.danger { color: #9A3A3A; background: #FBE9E9; }
+    .btn:active { transform: scale(0.98); }
+
+    .ring-wrap { display: flex; align-items: center; gap: 26px; }
+    .ring { width: 170px; height: 170px; flex: none; }
+    .ring circle { fill: none; stroke-width: 12; stroke-linecap: round; }
+    .ring .track { stroke: var(--blush); }
+    .ring .bar { stroke: var(--rose); transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .5s ease; }
+    .ring text { font-family: var(--font); fill: var(--ink); text-anchor: middle; font-weight: 600; }
+    .ring-copy h2 { font-size: 22px; margin-bottom: 6px; }
+    .ring-copy p { color: var(--ink-muted); line-height: 1.5; font-size: 16px; }
+
+    .task {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 0; border-top: 1px solid var(--line);
+    }
+    .task:first-of-type { border-top: none; padding-top: 4px; }
+    .task .label { flex: 1; min-width: 0; }
+    .task .label strong { display: block; font-size: 17px; }
+    .task .label span { color: var(--ink-muted); font-size: 14px; }
+    .task .points { color: var(--ink-muted); font-size: 14px; white-space: nowrap; }
+    .task input[type="number"] { width: 130px; text-align: right; }
+
+    /* großer Haken als Touch-Fläche */
+    .check {
+      width: 56px; height: 56px; flex: none;
+      border-radius: 18px; border: 2px solid var(--line); background: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .2s, border-color .2s;
+    }
+    .check svg { width: 26px; height: 26px; stroke: #fff; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(.6); transition: .2s; }
+    .check.on { background: var(--rose); border-color: var(--rose); }
+    .check.on svg { opacity: 1; transform: scale(1); }
+
+    .progress { height: 10px; background: var(--blush); border-radius: 99px; overflow: hidden; margin-top: 10px; }
+    .progress > i { display: block; height: 100%; background: var(--rose); border-radius: 99px; transition: width .4s ease; }
+    .progress > i.warn { background: var(--warn); }
+
+    .pill {
+      display: inline-block; padding: 5px 12px; border-radius: 99px;
+      font-size: 13px; font-weight: 600; background: var(--blush); color: var(--rose-deep);
+    }
+    .pill.warn { background: #FBEEDB; color: #8E5E1E; }
+    .pill.bad { background: #FBE9E9; color: #9A3A3A; }
+    .pill.muted { background: #F2EEEF; color: var(--ink-muted); }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat { background: var(--blush); border-radius: var(--radius-md); padding: 16px; }
+    .stat b { display: block; font-size: 28px; font-weight: 600; line-height: 1.1; }
+    .stat span { color: var(--ink-muted); font-size: 14px; }
+
+    /* Wochentabelle */
+    .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+    @media (max-width: 760px) { .week { grid-template-columns: repeat(2, 1fr); } }
+    .day {
+      background: var(--blush); border-radius: var(--radius-md); padding: 14px 12px;
+      text-align: left; display: flex; flex-direction: column; gap: 8px;
+      border: 2px solid transparent; min-height: 170px;
+    }
+    .day.today { border-color: var(--rose); }
+    .day.future { opacity: .55; }
+    .day .d { display: flex; justify-content: space-between; align-items: baseline; }
+    .day .d b { font-size: 16px; }
+    .day .d span { font-size: 13px; color: var(--ink-muted); }
+    .day .score { font-size: 30px; font-weight: 600; color: var(--rose-deep); line-height: 1; }
+    .day .row { font-size: 14px; color: var(--ink-muted); }
+    .day .marks { display: flex; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+    .mark { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: #fff; color: var(--ink-muted); }
+    .mark.on { background: var(--rose); color: #fff; }
+
+    /* Diagramme (reines SVG) */
+    .chart { width: 100%; height: auto; display: block; }
+    .chart text { font-family: var(--font); font-size: 11px; fill: var(--ink-muted); }
+    .chart .goal { stroke: var(--rose-deep); stroke-dasharray: 4 4; stroke-width: 1; }
+    .chart .band { fill: var(--blush); }
+    .chart rect.v { fill: var(--rose-soft); rx: 5; }
+    .chart rect.v.hit { fill: var(--rose); }
+
+    /* Formulare in den Einstellungen */
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 14px; color: var(--ink-muted); margin-bottom: 6px; }
+    .field .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .plan-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { min-height: 46px; padding: 0 18px; border-radius: 99px; background: var(--blush); color: var(--rose-deep); font-weight: 600; }
+    .chip.on { background: var(--rose); color: #fff; }
+    .scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+    .scale button { min-height: 48px; border-radius: 12px; background: var(--blush); font-weight: 600; color: var(--rose-deep); }
+    .scale button.on { background: var(--rose); color: #fff; }
+    .hint { color: var(--ink-muted); font-size: 14px; line-height: 1.5; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom));
+      transform: translateX(-50%) translateY(20px);
+      background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px;
+      font-size: 15px; opacity: 0; pointer-events: none; transition: .25s;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== KOPFZEILE ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <h1 id="greeting">Hallo Michelle</h1>
+      <small id="dateline"></small>
+    </div>
+    <div class="datenav">
+      <button class="btn icon" id="prevDay" aria-label="Vorheriger Tag">‹</button>
+      <input type="date" id="datePicker" aria-label="Datum wählen" />
+      <button class="btn icon" id="nextDay" aria-label="Nächster Tag">›</button>
+      <button class="btn" id="todayBtn">Heute</button>
+    </div>
+  </header>
+
+  <!-- ===================== ANSICHT: TAG ===================== -->
+  <section class="view active" id="view-day">
+    <div class="grid">
+      <div class="card col-6">
+        <div class="ring-wrap">
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="track" cx="60" cy="60" r="52"></circle>
+            <circle class="bar" id="ringBar" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7"></circle>
+            <text x="60" y="58" font-size="30" id="ringPct">0%</text>
+            <text x="60" y="78" font-size="10" id="ringSub" style="fill:#8C6F77">Tages-Score</text>
+          </svg>
+          <div class="ring-copy">
+            <h2 id="ringTitle">Dein Tag</h2>
+            <p id="ringText"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Diese Woche</h2><span class="meta" id="weekRangeMini"></span></div>
+        <div class="stats" id="weekStatsMini"></div>
+      </div>
+
+      <div class="card col-12">
+        <div class="card-head"><h2>Heutige Aufgaben</h2><span class="meta" id="taskMeta"></span></div>
+        <div id="tasks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ANSICHT: WOCHE ===================== -->
+  <section class="view" id="view-week">
+    <div class="grid">
+      <div class="card col-12">
+        <div class="card-head">
+          <h2 id="weekTitle">Woche</h2>
+          <div class="actions">
+            <button class="btn icon" id="prevWeek" aria-label="Vorherige Woche">‹</button>
+            <button class="btn icon" id="nextWeek" aria-label="Nächste Woche">›</button>
+          </div>
+        </div>
+        <div class="stats" id="weekStats" style="margin-bottom:18px"></div>
+        <div class="week" id="weekGrid"></div>
+      </div>
+      <div class="card col-4"><div class="card-head"><h3>Schritte</h3></div><div id="chartStepsW"></div></div>
+      <div class="card col-4"><div class="card-head"><h3>Kalorien</h3></div><div id="chartCalW"></div></div>
+      <div class="card col-4"><div class="card-head"><h3>Tages-Score</h3></div><div id="chartScoreW"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== ANSICHT: AUSWERTUNG ===================== -->
+  <section class="view" id="view-review">
+    <div class="grid">
+      <div class="card col-12">
+        <div class="card-head"><h2>Wochenvergleich</h2><span class="meta" id="compareMeta"></span></div>
+        <div id="chartCompare"></div>
+      </div>
+      <div class="card col-12">
+        <div class="card-head"><h2>Wochenreflexion</h2><span class="meta" id="reflWeek"></span></div>
+        <div class="field"><label>Was lief diese Woche gut?</label><textarea id="r1"></textarea></div>
+        <div class="field"><label>Was war herausfordernd?</label><textarea id="r2"></textarea></div>
+        <div class="field"><label>Was möchte ich nächste Woche verbessern?</label><textarea id="r3"></textarea></div>
+        <div class="field"><label>Wie zufrieden bin ich mit meiner Woche?</label><div class="scale" id="r4"></div></div>
+        <div class="field"><label>Mein Fokus für die nächste Woche</label><textarea id="r5"></textarea></div>
+        <div class="actions"><button class="btn primary" id="saveRefl">Reflexion speichern</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ANSICHT: EINSTELLUNGEN ===================== -->
+  <section class="view" id="view-settings">
+    <div class="grid">
+      <div class="card col-6">
+        <div class="card-head"><h2>Ziele</h2></div>
+        <div class="field"><label>Schrittziel pro Tag</label><input type="number" id="sStepGoal" min="0" step="500" inputmode="numeric" /></div>
+        <div class="field"><label>Kalorien-Zielbereich (kcal)</label>
+          <div class="row2"><input type="number" id="sCalMin" inputmode="numeric" placeholder="von" /><input type="number" id="sCalMax" inputmode="numeric" placeholder="bis" /></div></div>
+        <div class="field"><label>Teilpunkte bis … kcal außerhalb des Bereichs</label><input type="number" id="sCalPartial" inputmode="numeric" />
+          <p class="hint" style="margin-top:6px">Bis zu dieser Abweichung gibt es die Hälfte der Punkte, darüber 0.</p></div>
+        <div class="field"><label>Anteil Teilpunkte (0–1)</label><input type="number" id="sCalPartialFactor" min="0" max="1" step="0.1" inputmode="decimal" /></div>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Punkte</h2></div>
+        <div class="field"><label>Schritte erreicht</label><input type="number" id="pSteps" inputmode="numeric" /></div>
+        <div class="field"><label>Kalorien im Zielbereich</label><input type="number" id="pCal" inputmode="numeric" /></div>
+        <div class="field"><label>Supplemente genommen</label><input type="number" id="pSupp" inputmode="numeric" /></div>
+        <div class="field"><label>Workout / Rest Day erledigt</label><input type="number" id="pWorkout" inputmode="numeric" /></div>
+        <div class="field"><label>Gua Sha erledigt</label><input type="number" id="pGua" inputmode="numeric" /></div>
+        <p class="hint">Der Tages-Score wird immer prozentual aus den an diesem Tag geplanten Aufgaben berechnet.</p>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Trainingsplan</h2></div>
+        <div id="planRows"></div>
+        <p class="hint">„Rest Day" im Text markiert einen Ruhetag.</p>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Gua Sha Tage</h2></div>
+        <div class="chips" id="guaChips"></div>
+        <div style="height:22px"></div>
+        <div class="card-head"><h2>Supplemente</h2></div>
+        <div class="field"><label>Kurze Beschreibung (optional)</label><input type="text" id="sSuppNote" placeholder="z. B. Omega 3, Magnesium, Vitamin D" /></div>
+      </div>
+
+      <div class="card col-12">
+        <div class="actions"><button class="btn primary" id="saveSettings">Einstellungen speichern</button></div>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Integrationen</h2><span class="pill muted">bald</span></div>
+        <p class="hint" style="margin-bottom:12px">Platzhalter für spätere Anbindungen. Für echte Verbindungen braucht es OAuth bzw. API-Schlüssel und ein kleines Backend.</p>
+        <div class="task"><div class="label"><strong>Garmin Connect</strong><span>Schritte automatisch übernehmen</span></div><span class="pill muted">nicht verbunden</span></div>
+        <div class="task"><div class="label"><strong>FatSecret</strong><span>Kalorien automatisch übernehmen</span></div><span class="pill muted">nicht verbunden</span></div>
+      </div>
+
+      <div class="card col-6">
+        <div class="card-head"><h2>Daten sichern</h2></div>
+        <div class="actions" style="margin-bottom:12px">
+          <button class="btn" id="exportJson">JSON exportieren</button>
+          <button class="btn" id="exportCsv">CSV exportieren</button>
+          <label class="btn ghost" for="importFile">JSON importieren</label>
+          <input type="file" id="importFile" accept="application/json,.json" style="display:none" />
+        </div>
+        <p class="hint">Deine Daten liegen nur in diesem Browser auf diesem Gerät. Exportiere regelmäßig eine Sicherung.</p>
+        <div style="height:16px"></div>
+        <button class="btn danger" id="resetAll">Alle Daten löschen</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================== TABS ===================== -->
+<nav class="tabs">
+  <button class="tab active" data-view="day">Heute</button>
+  <button class="tab" data-view="week">Woche</button>
+  <button class="tab" data-view="review">Auswertung</button>
+  <button class="tab" data-view="settings">Einstellungen</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==============================================================
+   1. DATENMODELL & SPEICHERUNG
+   ============================================================== */
+const STORAGE_KEY = 'habit-tracker-v1';
+const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];           // Index 0 = Montag
+const WEEKDAYS_LONG = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+const DEFAULT_SETTINGS = {
+  stepGoal: 10000,
+  calMin: 1900,
+  calMax: 2100,
+  calPartialRange: 150,        // bis zu +/-150 kcal außerhalb → Teilpunkte
+  calPartialFactor: 0.5,       // Anteil der Punkte bei "leicht daneben"
+  points: { steps: 25, calories: 25, supplements: 15, workout: 25, guasha: 10 },
+  plan: ['Ganzkörpertraining', 'Short Run', 'Rest Day', 'Unterkörpertraining', 'Rest Day', 'Oberkörpertraining', 'Long Run'],
+  guaShaDays: [0, 2, 5],       // Mo, Mi, Sa
+  supplementsNote: '',
+  integrations: { garmin: { connected: false }, fatsecret: { connected: false } }
+};
+
+// Ein Tag: { steps: Zahl|null, calories: Zahl|null, supplements: bool, workout: bool, guasha: bool }
+// Reflexion pro Woche (Schlüssel = Montag der Woche): { good, hard, improve, satisfaction, focus }
+let state = { settings: structuredClone(DEFAULT_SETTINGS), days: {}, reflections: {} };
+
+// localStorage kann in manchen Umgebungen (z. B. Vorschau-Fenstern) blockiert sein → Fallback im Speicher.
+const storage = {
+  load() {
+    try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+    catch { return null; }
+  },
+  save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch { /* nur Session-Speicher */ }
+  }
+};
+
+function loadState() {
+  const saved = storage.load();
+  if (saved) {
+    state = {
+      settings: { ...structuredClone(DEFAULT_SETTINGS), ...saved.settings },
+      days: saved.days || {},
+      reflections: saved.reflections || {}
+    };
+    state.settings.points = { ...DEFAULT_SETTINGS.points, ...(saved.settings?.points || {}) };
+  }
+}
+function save() { storage.save(); }
+
+/* ==============================================================
+   2. DATUMS-HELFER
+   ============================================================== */
+const pad = (n) => String(n).padStart(2, '0');
+const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fromKey = (k) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const weekdayIdx = (d) => (d.getDay() + 6) % 7;               // Montag = 0
+const mondayOf = (d) => addDays(d, -weekdayIdx(d));
+const sameDay = (a, b) => toKey(a) === toKey(b);
+const fmtLong = (d) => d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtShort = (d) => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
+const fmtNum = (n) => n == null ? '–' : n.toLocaleString('de-DE');
+
+/* ==============================================================
+   3. SCORING
+   ============================================================== */
+function getDay(key) {
+  return state.days[key] || { steps: null, calories: null, supplements: false, workout: false, guasha: false };
+}
+function hasData(key) {
+  const d = state.days[key];
+  return !!d && (d.steps != null || d.calories != null || d.supplements || d.workout || d.guasha);
+}
+function isRestDay(name) { return /rest|ruhe/i.test(name || ''); }
+function guaPlanned(date) { return state.settings.guaShaDays.includes(weekdayIdx(date)); }
+
+// Kalorien-Status: 'in' | 'low' | 'high' | 'near-low' | 'near-high' | 'none'
+function calStatus(cal) {
+  const s = state.settings;
+  if (cal == null) return 'none';
+  if (cal >= s.calMin && cal <= s.calMax) return 'in';
+  if (cal < s.calMin) return (s.calMin - cal) <= s.calPartialRange ? 'near-low' : 'low';
+  return (cal - s.calMax) <= s.calPartialRange ? 'near-high' : 'high';
+}
+function calFactor(cal) {
+  const st = calStatus(cal);
+  if (st === 'in') return 1;
+  if (st === 'near-low' || st === 'near-high') return state.settings.calPartialFactor;
+  return 0;
+}
+
+// Liefert Punkte, mögliche Punkte und Prozent-Score für einen Tag
+function scoreDay(date) {
+  const s = state.settings, p = s.points, d = getDay(toKey(date));
+  let earned = 0, possible = 0;
+  possible += p.steps;       if (d.steps != null && d.steps >= s.stepGoal) earned += p.steps;
+  possible += p.calories;    earned += p.calories * calFactor(d.calories);
+  possible += p.supplements; if (d.supplements) earned += p.supplements;
+  possible += p.workout;     if (d.workout) earned += p.workout;
+  if (guaPlanned(date)) { possible += p.guasha; if (d.guasha) earned += p.guasha; }
+  return { earned, possible, pct: possible ? Math.round(earned / possible * 100) : 0 };
+}
+
+// Wochenstatistik (Montag → Sonntag)
+function weekStats(monday) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  let scoreSum = 0, tracked = 0, workouts = 0, stepDays = 0, calDays = 0, suppDays = 0, guaDays = 0, guaPlannedCount = 0;
+  const per = days.map((date) => {
+    const key = toKey(date), d = getDay(key), sc = scoreDay(date);
+    const has = hasData(key);
+    if (has) { scoreSum += sc.pct; tracked++; }
+    if (d.workout) workouts++;
+    if (d.steps != null && d.steps >= state.settings.stepGoal) stepDays++;
+    if (calStatus(d.calories) === 'in') calDays++;
+    if (d.supplements) suppDays++;
+    if (guaPlanned(date)) { guaPlannedCount++; if (d.guasha) guaDays++; }
+    return { date, key, d, score: sc.pct, has };
+  });
+  return {
+    per, tracked, workouts, stepDays, calDays, suppDays, guaDays, guaPlannedCount,
+    weekScore: tracked ? Math.round(scoreSum / tracked) : 0
+  };
+}
+
+/* ==============================================================
+   4. ZUSTAND DER OBERFLÄCHE
+   ============================================================== */
+let selectedDate = new Date();
+let currentView = 'day';
+const $ = (id) => document.getElementById(id);
+
+function showToast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function setDate(d) { selectedDate = d; renderAll(); }
+function setView(v) {
+  currentView = v;
+  document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active', el.id === `view-${v}`));
+  document.querySelectorAll('.tab').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
+  renderAll();
+}
+
+/* ==============================================================
+   5. RENDERING: TAGESANSICHT
+   ============================================================== */
+const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+
+function renderHeader() {
+  const today = new Date();
+  $('dateline').textContent = sameDay(selectedDate, today) ? `Heute, ${fmtLong(selectedDate)}` : fmtLong(selectedDate);
+  $('datePicker').value = toKey(selectedDate);
+  const h = today.getHours();
+  $('greeting').textContent = sameDay(selectedDate, today)
+    ? (h < 11 ? 'Guten Morgen, Michelle' : h < 18 ? 'Hallo Michelle' : 'Guten Abend, Michelle')
+    : 'Rückblick';
+}
+
+function renderRing() {
+  const sc = scoreDay(selectedDate);
+  const C = 2 * Math.PI * 52;
+  $('ringBar').style.strokeDashoffset = C - (C * sc.pct / 100);
+  $('ringPct').textContent = `${sc.pct}%`;
+  const msgs = [
+    [100, 'Alles erledigt. Das ist ein richtig runder Tag.'],
+    [80, 'Fast alles geschafft – stark.'],
+    [50, 'Guter Weg. Ein, zwei Dinge sind noch offen.'],
+    [1, 'Ein Anfang ist gemacht. Alles Weitere darf heute noch kommen.'],
+    [0, 'Noch nichts eingetragen – trag ein, was heute schon passiert ist.']
+  ];
+  $('ringText').textContent = msgs.find(([min]) => sc.pct >= min)[1];
+  $('ringTitle').textContent = `${sc.earned} von ${sc.possible} Punkten`;
+}
+
+function renderTasks() {
+  const s = state.settings, key = toKey(selectedDate), d = getDay(key), p = s.points;
+  const wd = weekdayIdx(selectedDate);
+  const planName = s.plan[wd] || 'Rest Day';
+  const rest = isRestDay(planName);
+  const gua = guaPlanned(selectedDate);
+  const stepPct = d.steps != null ? Math.min(100, d.steps / s.stepGoal * 100) : 0;
+  const cs = calStatus(d.calories);
+  const calLabel = { in: 'im Zielbereich', 'near-low': 'leicht darunter', 'near-high': 'leicht darüber', low: 'deutlich darunter', high: 'deutlich darüber', none: 'noch nichts eingetragen' }[cs];
+  const calPill = cs === 'in' ? '' : (cs === 'none' ? 'muted' : (cs.startsWith('near') ? 'warn' : 'bad'));
+  const calPct = d.calories != null ? Math.min(100, d.calories / s.calMax * 100) : 0;
+
+  $('taskMeta').textContent = `${WEEKDAYS_LONG[wd]} · ${gua ? 5 : 4} Aufgaben`;
+  $('tasks').innerHTML = `
+    <div class="task">
+      <div class="label"><strong>Schritte</strong><span>${fmtNum(d.steps)} von ${fmtNum(s.stepGoal)}</span>
+        <div class="progress"><i style="width:${stepPct}%"></i></div></div>
+      <span class="points">${p.steps} P.</span>
+      <input type="number" inputmode="numeric" min="0" step="100" id="inSteps" placeholder="0" value="${d.steps ?? ''}" />
+    </div>
+    <div class="task">
+      <div class="label"><strong>Kalorien</strong><span>${fmtNum(d.calories)} kcal · Ziel ${fmtNum(s.calMin)}–${fmtNum(s.calMax)} · <span class="pill ${calPill}">${calLabel}</span></span>
+        <div class="progress"><i class="${calPill === 'warn' || calPill === 'bad' ? 'warn' : ''}" style="width:${calPct}%"></i></div></div>
+      <span class="points">${p.calories} P.</span>
+      <input type="number" inputmode="numeric" min="0" step="10" id="inCal" placeholder="0" value="${d.calories ?? ''}" />
+    </div>
+    <div class="task">
+      <div class="label"><strong>Supplemente genommen</strong><span>${s.supplementsNote || 'Tägliche Routine'}</span></div>
+      <span class="points">${p.supplements} P.</span>
+      <button class="check ${d.supplements ? 'on' : ''}" data-toggle="supplements" aria-pressed="${d.supplements}" aria-label="Supplemente abhaken">${CHECK_SVG}</button>
+    </div>
+    <div class="task">
+      <div class="label"><strong>${planName}</strong><span>${rest ? 'Bewusst Pause machen und in Bewegung bleiben' : 'Heutiges Workout'}</span></div>
+      <span class="points">${p.workout} P.</span>
+      <button class="check ${d.workout ? 'on' : ''}" data-toggle="workout" aria-pressed="${d.workout}" aria-label="Workout abhaken">${CHECK_SVG}</button>
+    </div>
+    ${gua ? `
+    <div class="task">
+      <div class="label"><strong>Gua Sha Gesichtsmassage</strong><span>Heute geplant</span></div>
+      <span class="points">${p.guasha} P.</span>
+      <button class="check ${d.guasha ? 'on' : ''}" data-toggle="guasha" aria-pressed="${d.guasha}" aria-label="Gua Sha abhaken">${CHECK_SVG}</button>
+    </div>` : ''}
+  `;
+
+  // Zahleneingaben: speichern bei Änderung
+  const num = (v) => (v === '' ? null : Math.max(0, Math.round(Number(v))));
+  $('inSteps').addEventListener('change', (e) => updateDay(key, { steps: num(e.target.value) }));
+  $('inCal').addEventListener('change', (e) => updateDay(key, { calories: num(e.target.value) }));
+  document.querySelectorAll('[data-toggle]').forEach((b) =>
+    b.addEventListener('click', () => updateDay(key, { [b.dataset.toggle]: !getDay(key)[b.dataset.toggle] })));
+}
+
+function updateDay(key, patch) {
+  state.days[key] = { ...getDay(key), ...patch };
+  save();
+  renderAll();
+}
+
+function renderWeekMini() {
+  const ws = weekStats(mondayOf(selectedDate));
+  const mon = mondayOf(selectedDate);
+  $('weekRangeMini').textContent = `${fmtShort(mon)} – ${fmtShort(addDays(mon, 6))}`;
+  $('weekStatsMini').innerHTML = statsHtml(ws);
+}
+function statsHtml(ws) {
+  return `
+    <div class="stat"><b>${ws.weekScore}%</b><span>Wochen-Score</span></div>
+    <div class="stat"><b>${ws.workouts}<small style="font-size:16px;color:var(--ink-muted)"> / 7</small></b><span>Workouts &amp; Rest Days</span></div>
+    <div class="stat"><b>${ws.stepDays}<small style="font-size:16px;color:var(--ink-muted)"> / 7</small></b><span>Tage Schrittziel</span></div>
+    <div class="stat"><b>${ws.calDays}<small style="font-size:16px;color:var(--ink-muted)"> / 7</small></b><span>Tage Kalorien im Ziel</span></div>`;
+}
+
+/* ==============================================================
+   6. RENDERING: WOCHENANSICHT
+   ============================================================== */
+function renderWeek() {
+  const mon = mondayOf(selectedDate);
+  const ws = weekStats(mon);
+  const today = new Date();
+  $('weekTitle').textContent = `${fmtShort(mon)} – ${fmtShort(addDays(mon, 6))}`;
+  $('weekStats').innerHTML = statsHtml(ws);
+  $('weekGrid').innerHTML = ws.per.map(({ date, d, score, has }, i) => {
+    const gp = guaPlanned(date);
+    return `
+    <button class="day ${sameDay(date, today) ? 'today' : ''} ${date > today ? 'future' : ''}" data-key="${toKey(date)}">
+      <div class="d"><b>${WEEKDAYS[i]}</b><span>${fmtShort(date)}</span></div>
+      <div class="score">${has ? score + '%' : '–'}</div>
+      <div class="row">${fmtNum(d.steps)} Schritte</div>
+      <div class="row">${fmtNum(d.calories)} kcal</div>
+      <div class="marks">
+        <span class="mark ${d.workout ? 'on' : ''}" title="${state.settings.plan[i]}">${isRestDay(state.settings.plan[i]) ? 'Rest' : 'Workout'}</span>
+        <span class="mark ${d.supplements ? 'on' : ''}">Suppl.</span>
+        ${gp ? `<span class="mark ${d.guasha ? 'on' : ''}">Gua Sha</span>` : ''}
+      </div>
+    </button>`;
+  }).join('');
+  document.querySelectorAll('.day[data-key]').forEach((b) =>
+    b.addEventListener('click', () => { selectedDate = fromKey(b.dataset.key); setView('day'); }));
+
+  const s = state.settings;
+  $('chartStepsW').innerHTML = barChart(ws.per.map((x) => x.d.steps), WEEKDAYS, { goal: s.stepGoal, max: Math.max(s.stepGoal * 1.2, ...ws.per.map((x) => x.d.steps || 0)), hit: (v) => v >= s.stepGoal });
+  $('chartCalW').innerHTML = barChart(ws.per.map((x) => x.d.calories), WEEKDAYS, { band: [s.calMin, s.calMax], max: Math.max(s.calMax * 1.25, ...ws.per.map((x) => x.d.calories || 0)), hit: (v) => calStatus(v) === 'in' });
+  $('chartScoreW').innerHTML = barChart(ws.per.map((x) => (x.has ? x.score : null)), WEEKDAYS, { max: 100, hit: (v) => v >= 80, suffix: '%' });
+}
+
+// Einfaches Balkendiagramm als SVG (keine externen Bibliotheken → offline-sicher)
+function barChart(values, labels, opt = {}) {
+  const W = 320, H = 170, padL = 8, padR = 8, padT = 14, padB = 24;
+  const n = values.length, innerW = W - padL - padR, innerH = H - padT - padB;
+  const max = opt.max || Math.max(1, ...values.map((v) => v || 0));
+  const y = (v) => padT + innerH - (Math.min(v, max) / max) * innerH;
+  const slot = innerW / n, bw = slot * 0.6;
+  let out = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagramm">`;
+  if (opt.band) out += `<rect class="band" x="${padL}" y="${y(opt.band[1])}" width="${innerW}" height="${y(opt.band[0]) - y(opt.band[1])}"/>`;
+  if (opt.goal) out += `<line class="goal" x1="${padL}" x2="${W - padR}" y1="${y(opt.goal)}" y2="${y(opt.goal)}"/>`;
+  values.forEach((v, i) => {
+    const x = padL + slot * i + (slot - bw) / 2;
+    if (v != null) {
+      const h = Math.max(3, padT + innerH - y(v));
+      out += `<rect class="v ${opt.hit && opt.hit(v) ? 'hit' : ''}" x="${x}" y="${y(v)}" width="${bw}" height="${h}"/>`;
+      out += `<text x="${x + bw / 2}" y="${y(v) - 4}" text-anchor="middle">${v >= 1000 ? Math.round(v / 100) / 10 + 'k' : v}${opt.suffix || ''}</text>`;
+    }
+    out += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${labels[i]}</text>`;
+  });
+  return out + '</svg>';
+}
+
+/* ==============================================================
+   7. RENDERING: AUSWERTUNG & REFLEXION
+   ============================================================== */
+function renderReview() {
+  // Wochenvergleich: die letzten 8 Wochen bis zur ausgewählten Woche, nur Wochen mit Daten
+  const mon = mondayOf(selectedDate);
+  const weeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const m = addDays(mon, -7 * i); const ws = weekStats(m);
+    if (ws.tracked > 0 || i === 0) weeks.push({ m, ws });
+  }
+  const withData = weeks.filter((w) => w.ws.tracked > 0);
+  if (withData.length >= 2) {
+    $('compareMeta').textContent = `Wochen-Score der letzten ${withData.length} Wochen`;
+    $('chartCompare').innerHTML = barChart(withData.map((w) => w.ws.weekScore), withData.map((w) => fmtShort(w.m)), { max: 100, hit: (v) => v >= 80, suffix: '%' });
+  } else {
+    $('compareMeta').textContent = '';
+    $('chartCompare').innerHTML = `<p class="hint">Sobald zwei Wochen mit Einträgen vorhanden sind, erscheint hier der Vergleich.</p>`;
+  }
+
+  // Reflexion der ausgewählten Woche
+  const key = toKey(mon);
+  const r = state.reflections[key] || {};
+  $('reflWeek').textContent = `${fmtShort(mon)} – ${fmtShort(addDays(mon, 6))}`;
+  $('r1').value = r.good || ''; $('r2').value = r.hard || ''; $('r3').value = r.improve || ''; $('r5').value = r.focus || '';
+  $('r4').innerHTML = Array.from({ length: 10 }, (_, i) => `<button class="${r.satisfaction === i + 1 ? 'on' : ''}" data-v="${i + 1}">${i + 1}</button>`).join('');
+  $('r4').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    $('r4').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+}
+function saveReflection() {
+  const key = toKey(mondayOf(selectedDate));
+  const on = $('r4').querySelector('.on');
+  state.reflections[key] = {
+    good: $('r1').value.trim(), hard: $('r2').value.trim(), improve: $('r3').value.trim(),
+    satisfaction: on ? Number(on.dataset.v) : null, focus: $('r5').value.trim(),
+    savedAt: new Date().toISOString()
+  };
+  save(); showToast('Reflexion gespeichert');
+}
+
+/* ==============================================================
+   8. RENDERING: EINSTELLUNGEN
+   ============================================================== */
+function renderSettings() {
+  const s = state.settings;
+  $('sStepGoal').value = s.stepGoal; $('sCalMin').value = s.calMin; $('sCalMax').value = s.calMax;
+  $('sCalPartial').value = s.calPartialRange; $('sCalPartialFactor').value = s.calPartialFactor;
+  $('pSteps').value = s.points.steps; $('pCal').value = s.points.calories; $('pSupp').value = s.points.supplements;
+  $('pWorkout').value = s.points.workout; $('pGua').value = s.points.guasha;
+  $('sSuppNote').value = s.supplementsNote || '';
+  $('planRows').innerHTML = WEEKDAYS_LONG.map((n, i) => `<div class="plan-row"><label>${n}</label><input type="text" data-plan="${i}" value="${s.plan[i] || ''}" placeholder="Rest Day" /></div>`).join('');
+  $('guaChips').innerHTML = WEEKDAYS_LONG.map((n, i) => `<button class="chip ${s.guaShaDays.includes(i) ? 'on' : ''}" data-gua="${i}">${n}</button>`).join('');
+  $('guaChips').querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => c.classList.toggle('on')));
+}
+function saveSettings() {
+  const s = state.settings;
+  const num = (id, fb) => { const v = Number($(id).value); return Number.isFinite(v) && $(id).value !== '' ? v : fb; };
+  s.stepGoal = num('sStepGoal', s.stepGoal);
+  s.calMin = num('sCalMin', s.calMin); s.calMax = num('sCalMax', s.calMax);
+  if (s.calMin > s.calMax) [s.calMin, s.calMax] = [s.calMax, s.calMin];
+  s.calPartialRange = num('sCalPartial', s.calPartialRange);
+  s.calPartialFactor = Math.min(1, Math.max(0, num('sCalPartialFactor', s.calPartialFactor)));
+  s.points = { steps: num('pSteps', 25), calories: num('pCal', 25), supplements: num('pSupp', 15), workout: num('pWorkout', 25), guasha: num('pGua', 10) };
+  s.plan = Array.from(document.querySelectorAll('[data-plan]')).map((i) => i.value.trim() || 'Rest Day');
+  s.guaShaDays = Array.from(document.querySelectorAll('[data-gua].on')).map((c) => Number(c.dataset.gua));
+  s.supplementsNote = $('sSuppNote').value.trim();
+  save(); showToast('Einstellungen gespeichert'); renderAll();
+}
+
+/* ==============================================================
+   9. EXPORT / IMPORT
+   ============================================================== */
+function download(name, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function exportJson() {
+  download(`habit-tracker-${toKey(new Date())}.json`, JSON.stringify(state, null, 2), 'application/json');
+}
+function exportCsv() {
+  const rows = [['Datum', 'Schritte', 'Kalorien', 'Supplemente', 'Workout', 'GuaSha', 'Score']];
+  Object.keys(state.days).sort().forEach((k) => {
+    const d = state.days[k];
+    rows.push([k, d.steps ?? '', d.calories ?? '', d.supplements ? 1 : 0, d.workout ? 1 : 0, d.guasha ? 1 : 0, scoreDay(fromKey(k)).pct]);
+  });
+  download(`habit-tracker-${toKey(new Date())}.csv`, rows.map((r) => r.join(';')).join('\n'), 'text/csv');
+}
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.days || !data.settings) throw new Error('Format');
+      if (!confirm('Vorhandene Daten werden mit der Sicherung zusammengeführt. Fortfahren?')) return;
+      state.days = { ...state.days, ...data.days };
+      state.reflections = { ...state.reflections, ...(data.reflections || {}) };
+      state.settings = { ...state.settings, ...data.settings };
+      save(); renderAll(); showToast('Sicherung importiert');
+    } catch { showToast('Datei konnte nicht gelesen werden'); }
+  };
+  reader.readAsText(file);
+}
+
+/* ==============================================================
+   10. START
+   ============================================================== */
+function renderAll() {
+  renderHeader();
+  if (currentView === 'day') { renderRing(); renderTasks(); renderWeekMini(); }
+  if (currentView === 'week') renderWeek();
+  if (currentView === 'review') renderReview();
+  if (currentView === 'settings') renderSettings();
+}
+
+function init() {
+  loadState();
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => setView(t.dataset.view)));
+  $('prevDay').addEventListener('click', () => setDate(addDays(selectedDate, -1)));
+  $('nextDay').addEventListener('click', () => setDate(addDays(selectedDate, 1)));
+  $('todayBtn').addEventListener('click', () => setDate(new Date()));
+  $('datePicker').addEventListener('change', (e) => { if (e.target.value) setDate(fromKey(e.target.value)); });
+  $('prevWeek').addEventListener('click', () => setDate(addDays(selectedDate, -7)));
+  $('nextWeek').addEventListener('click', () => setDate(addDays(selectedDate, 7)));
+  $('saveRefl').addEventListener('click', saveReflection);
+  $('saveSettings').addEventListener('click', saveSettings);
+  $('exportJson').addEventListener('click', exportJson);
+  $('exportCsv').addEventListener('click', exportCsv);
+  $('importFile').addEventListener('change', (e) => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; });
+  $('resetAll').addEventListener('click', () => {
+    if (confirm('Wirklich alle Einträge, Reflexionen und Einstellungen löschen?')) {
+      state = { settings: structuredClone(DEFAULT_SETTINGS), days: {}, reflections: {} };
+      save(); renderAll(); showToast('Alles gelöscht');
+    }
+  });
+  renderAll();
+
+  // Service Worker nur, wenn die App über http(s) läuft (nicht bei file://)
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+}
+init();
+</script>
+</body>
+</html>

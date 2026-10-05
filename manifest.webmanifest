@@ -1,0 +1,16 @@
+{
+  "name": "Mein Habit Tracker",
+  "short_name": "Habits",
+  "description": "Persönliches Tracking für Schritte, Kalorien, Supplemente, Training und Gua Sha.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FBF3F5",
+  "theme_color": "#FBF3F5",
+  "lang": "de",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
